@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>隨機分組抽籤程式</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Microsoft JhengHei, sans-serif; /* Windows 11 預設字體 */
+            background-color: #f0f4f8;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* 左上角歷史紀錄區域 */
+        #history-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 300px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-content: flex-start;
+        }
+
+        .history-item {
+            /* 歷史紀錄字體大小為主要的一半 (3rem / 2 = 1.5rem) */
+            font-size: 1.5rem; 
+            color: #555;
+            background: #e0e0e0;
+            padding: 5px 10px;
+            border-radius: 5px;
+            animation: fadeIn 0.5s;
+        }
+
+        /* 中間主要抽籤區域 */
+        #main-stage {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        #current-draw {
+            display: flex;
+            gap: 40px;
+            min-height: 150px; /* 預留空間避免跳動 */
+        }
+
+        .draw-item {
+            /* 主要顯示字體大小 */
+            font-size: 4rem; 
+            font-weight: bold;
+            color: #2c3e50;
+            background: #fff;
+            padding: 20px 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            border: 2px solid #3498db;
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        /* 按鈕樣式 */
+        #controls {
+            margin-bottom: 50px;
+            text-align: center;
+        }
+
+        button {
+            font-size: 1.2rem;
+            padding: 15px 40px;
+            cursor: pointer;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            transition: background 0.2s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        /* 動畫效果 */
+        @keyframes popIn {
+            from { transform: scale(0.5); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="history-container"></div>
+
+    <div id="main-stage">
+        <div id="current-draw">
+            </div>
+    </div>
+
+    <div id="controls">
+        <button id="drawBtn" onclick="drawItems()">開始抽籤</button>
+        <div id="status" style="margin-top: 10px; color: #777;">剩餘次數: 8</div>
+    </div>
+
+    <script>
+        // 1. 初始化資料
+        const groupB = Array.from({length: 12}, (_, i) => `B${i+1}`);
+        const groupS = Array.from({length: 12}, (_, i) => `S${i+1}`);
+        let allItems = [...groupB, ...groupS]; // 合併 B1-B12 和 S1-S12
+        let currentIndex = 0;
+        const itemsPerDraw = 3;
+        const totalRounds = 8;
+
+        // 洗牌演算法 (Fisher-Yates Shuffle)
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // 頁面載入時先洗牌
+        shuffle(allItems);
+
+        function drawItems() {
+            const drawBtn = document.getElementById('drawBtn');
+            const currentDrawContainer = document.getElementById('current-draw');
+            const historyContainer = document.getElementById('history-container');
+            const statusLabel = document.getElementById('status');
+
+            // 如果已經抽完了，就重置
+            if (currentIndex >= allItems.length) {
+                if(confirm("抽籤已結束，要重新開始嗎？")) {
+                    location.reload();
+                }
+                return;
+            }
+
+            // 1. 如果不是第一次抽，先把目前畫面上的移到左上角歷史區
+            if (currentDrawContainer.children.length > 0) {
+                // 將當前的內容複製到歷史區
+                Array.from(currentDrawContainer.children).forEach(child => {
+                    const historyItem = document.createElement('div');
+                    historyItem.className = 'history-item';
+                    historyItem.textContent = child.textContent;
+                    historyContainer.appendChild(historyItem);
+                });
+            }
+
+            // 2. 清空中間區域，準備顯示新的
+            currentDrawContainer.innerHTML = '';
+
+            // 3. 抽出接下來的 3 個
+            const batch = allItems.slice(currentIndex, currentIndex + itemsPerDraw);
+            currentIndex += itemsPerDraw;
+
+            // 4. 顯示在中間
+            batch.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'draw-item';
+                div.textContent = item;
+                currentDrawContainer.appendChild(div);
+            });
+
+            // 5. 更新按鈕狀態
+            const roundsLeft = totalRounds - (currentIndex / itemsPerDraw);
+            
+            if (roundsLeft === 0) {
+                drawBtn.textContent = "抽籤結束 (點擊重置)";
+                drawBtn.style.backgroundColor = "#27ae60";
+                statusLabel.textContent = "已完成所有分組";
+            } else {
+                drawBtn.textContent = "抽取下一組";
+                statusLabel.textContent = `剩餘次數: ${roundsLeft}`;
+            }
+        }
+    </script>
+</body>
+</html>
