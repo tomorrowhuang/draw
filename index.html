@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>隨機分組抽籤程式 (具備記憶功能)</title>
+    <title>隨機分組抽籤程式 (拉霸動畫版)</title>
     <style>
         body {
             font-family: 'Segoe UI', Microsoft JhengHei, sans-serif;
@@ -35,7 +35,6 @@
             background: #e0e0e0;
             padding: 5px 10px;
             border-radius: 5px;
-            /* 移除淡入動畫以免重新整理時閃爍，改由 JS 控制 */
         }
 
         /* 中間主要抽籤區域 */
@@ -49,20 +48,43 @@
 
         #current-draw {
             display: flex;
-            gap: 40px;
-            min-height: 150px;
+            gap: 30px; /* 框框之間的距離 */
+            min-height: 180px;
         }
 
         .draw-item {
+            /* 主要顯示字體大小 */
             font-size: 4rem; 
             font-weight: bold;
             color: #2c3e50;
             background: #fff;
-            padding: 20px 40px;
+            
+            /* 固定寬高，讓動畫跑起來更穩定 */
+            width: 180px;
+            height: 180px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+
             border-radius: 15px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-            border: 2px solid #3498db;
-            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+            border: 4px solid #3498db; /* 加粗邊框更有框框感 */
+            
+            /* 預設狀態 */
+            transition: border-color 0.3s, transform 0.2s;
+        }
+        
+        /* 動畫進行中的樣式 (可選) */
+        .draw-item.rolling {
+            border-color: #f1c40f; /* 轉動時邊框變黃色 */
+            color: #95a5a6;
+        }
+
+        /* 結果出爐時的彈出動畫 */
+        .pop-finish {
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border-color: #e74c3c; /* 確定後邊框變紅色 */
+            color: #2c3e50;
         }
 
         /* 按鈕區域 */
@@ -75,19 +97,22 @@
             gap: 10px;
         }
 
-        .btn-group {
-            display: flex;
-            gap: 15px;
-        }
-
         button {
             font-size: 1.2rem;
             padding: 15px 40px;
             cursor: pointer;
             border: none;
             border-radius: 50px;
-            transition: background 0.2s;
+            transition: all 0.2s;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        /* 按鈕停用狀態 (動畫中) */
+        button:disabled {
+            background-color: #bdc3c7 !important;
+            color: #7f8c8d !important;
+            cursor: not-allowed;
+            transform: scale(0.98);
         }
 
         #drawBtn {
@@ -104,10 +129,9 @@
         }
         #resetBtn:hover { background-color: #7f8c8d; }
 
-        /* 動畫效果 */
         @keyframes popIn {
-            from { transform: scale(0.5); opacity: 0; }
-            to { transform: scale(1); opacity: 1; }
+            from { transform: scale(0.8); }
+            to { transform: scale(1.1); }
         }
     </style>
 </head>
@@ -120,23 +144,22 @@
     </div>
 
     <div id="controls">
-        <button id="drawBtn" onclick="drawItems()">開始抽籤</button>
+        <button id="drawBtn" onclick="startDrawAnimation()">開始抽籤</button>
         <div id="status" style="color: #777;">載入中...</div>
-        
         <button id="resetBtn" onclick="hardReset()" style="display:none;">清除紀錄並重置</button>
     </div>
 
     <script>
         // 設定常數
-        const STORAGE_KEY = 'lottery_draw_data_v2'; // 用來存資料的 Key
+        const STORAGE_KEY = 'lottery_draw_data_v3_anim'; // 更改 key 以免跟舊版衝突
         const itemsPerDraw = 3;
         const totalRounds = 8;
 
         // 全域變數
         let allItems = [];
         let currentIndex = 0;
+        let isAnimating = false; // 用來鎖定按鈕
 
-        // 頁面載入時執行初始化
         window.onload = function() {
             loadState();
         };
@@ -144,17 +167,12 @@
         // 1. 讀取狀態
         function loadState() {
             const savedData = localStorage.getItem(STORAGE_KEY);
-            
             if (savedData) {
-                // 如果有紀錄，就讀取出來
                 const parsed = JSON.parse(savedData);
                 allItems = parsed.allItems;
                 currentIndex = parsed.currentIndex;
-                
-                // 恢復畫面顯示
-                restoreUI();
+                restoreUI(false); // false 代表不要執行動畫，直接顯示結果
             } else {
-                // 如果沒有紀錄，初始化新的一局
                 initNewGame();
             }
             updateStatus();
@@ -165,44 +183,36 @@
             const groupB = Array.from({length: 12}, (_, i) => `B${i+1}`);
             const groupS = Array.from({length: 12}, (_, i) => `S${i+1}`);
             allItems = [...groupB, ...groupS];
-            
             // 洗牌
             for (let i = allItems.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [allItems[i], allItems[j]] = [allItems[j], allItems[i]];
             }
-            
             currentIndex = 0;
-            saveState(); // 立刻存檔
-            restoreUI();
+            saveState();
+            restoreUI(false);
         }
 
-        // 3. 儲存狀態到 LocalStorage
+        // 3. 儲存狀態
         function saveState() {
-            const state = {
-                allItems: allItems,
-                currentIndex: currentIndex
-            };
+            const state = { allItems, currentIndex };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
             updateStatus();
         }
 
-        // 4. 根據目前資料恢復畫面 (核心邏輯)
-        function restoreUI() {
+        // 4. 恢復畫面 UI (mode: 'final' 直接顯示最終結果, 'empty' 顯示動畫前的空框)
+        function restoreUI(showAnimationPlaceholders) {
             const historyContainer = document.getElementById('history-container');
             const currentDrawContainer = document.getElementById('current-draw');
             
+            // 清空目前的顯示
             historyContainer.innerHTML = '';
-            currentDrawContainer.innerHTML = '';
-
-            // 邏輯：
-            // 歷史區：顯示 index 0 到 (currentIndex - 3) 的項目
-            // 中間區：顯示 index (currentIndex - 3) 到 currentIndex 的項目
-            // 如果 currentIndex 是 0，代表還沒開始
-
-            // A. 處理歷史區
-            // 只有當進度大於 3 時，才會有歷史紀錄
+            
+            // A. 處理歷史區 (邏輯不變)
             const historyEndIndex = Math.max(0, currentIndex - itemsPerDraw);
+            // 注意：如果是正在執行動畫的當下，currentIndex 已經加了，但我們希望上一輪的還在歷史區
+            // 不過為了簡單邏輯，我們讓歷史區總是顯示 "這次抽籤之前" 的所有項目
+            
             for (let i = 0; i < historyEndIndex; i++) {
                 const div = document.createElement('div');
                 div.className = 'history-item';
@@ -211,26 +221,25 @@
             }
 
             // B. 處理中間區
-            // 只有當 currentIndex > 0 時，中間才會有東西
-            if (currentIndex > 0) {
-                const currentStartIndex = historyEndIndex;
-                const currentEndIndex = currentIndex;
-                
-                for (let i = currentStartIndex; i < currentEndIndex; i++) {
-                    const div = document.createElement('div');
-                    div.className = 'draw-item';
-                    div.textContent = allItems[i];
-                    // 如果是剛載入頁面，我們可以移除動畫 class，或者保留讓它再跳一次，這裡保留
-                    currentDrawContainer.appendChild(div);
+            // 如果不是在跑動畫，就直接顯示目前的結果
+            if (!showAnimationPlaceholders) {
+                currentDrawContainer.innerHTML = ''; // 清空
+                if (currentIndex > 0) {
+                    for (let i = historyEndIndex; i < currentIndex; i++) {
+                        const div = document.createElement('div');
+                        div.className = 'draw-item'; // 普通樣式
+                        div.textContent = allItems[i];
+                        currentDrawContainer.appendChild(div);
+                    }
                 }
             }
         }
 
-        // 5. 抽籤動作
-        function drawItems() {
-            const drawBtn = document.getElementById('drawBtn');
+        // 5. 核心：開始抽籤動畫
+        function startDrawAnimation() {
+            if (isAnimating) return; // 防止連點
 
-            // 檢查是否已結束
+            // 檢查結束
             if (currentIndex >= allItems.length) {
                 if(confirm("所有組別已抽出。確定要清除紀錄並開始新的一局嗎？")) {
                     hardReset();
@@ -238,15 +247,91 @@
                 return;
             }
 
-            // 更新 currentIndex
-            currentIndex += itemsPerDraw;
+            isAnimating = true;
+            const drawBtn = document.getElementById('drawBtn');
+            drawBtn.disabled = true; // 鎖定按鈕
+            drawBtn.textContent = "抽籤中...";
 
-            // 儲存並更新畫面
-            saveState();
-            restoreUI();
+            // 1. 先把舊的移到歷史區 (透過 restoreUI 重新渲染歷史區)
+            // 此時 currentIndex 還沒加，所以歷史區是舊的，中間區我們手動清空準備做動畫
+            const historyContainer = document.getElementById('history-container');
+            const currentDrawContainer = document.getElementById('current-draw');
+            
+            // 將目前畫面上的東西移入歷史區 (視覺上) - 簡單作法是直接把 currentIndex 更新並重繪歷史
+            // 但我們需要中間這 3 個框框變成「動畫狀態」
+            
+            // 決定這次要抽出的 3 個幸運號碼
+            const finalResults = allItems.slice(currentIndex, currentIndex + itemsPerDraw);
+            
+            // 準備 DOM：清空中間，建立 3 個正在轉動的框
+            currentDrawContainer.innerHTML = '';
+            const slotElements = []; // 存這3個div參照
+
+            for(let i=0; i<3; i++) {
+                const div = document.createElement('div');
+                div.className = 'draw-item rolling'; // 加上轉動樣式
+                div.textContent = getRandomPlaceholder(); // 初始隨機文字
+                currentDrawContainer.appendChild(div);
+                slotElements.push(div);
+            }
+
+            // 2. 開始個別的動畫邏輯
+            let completedCount = 0;
+
+            finalResults.forEach((targetValue, index) => {
+                // 每個框框的動畫時間：隨機 2000ms ~ 4000ms
+                const duration = 2000 + Math.random() * 2000;
+                
+                // 啟動快速跳字 (每 50ms 換一次)
+                const intervalId = setInterval(() => {
+                    slotElements[index].textContent = getRandomPlaceholder();
+                }, 50);
+
+                // 設定停止時間
+                setTimeout(() => {
+                    clearInterval(intervalId); // 停止跳動
+                    slotElements[index].textContent = targetValue; // 顯示正確答案
+                    slotElements[index].classList.remove('rolling'); // 移除轉動樣式
+                    slotElements[index].classList.add('pop-finish'); // 加上完成特效
+                    
+                    completedCount++;
+                    
+                    // 當 3 個都停下來時，才解除鎖定並存檔
+                    if (completedCount === 3) {
+                        finishRound();
+                    }
+                }, duration);
+            });
         }
 
-        // 6. 更新按鈕文字與狀態
+        // 6. 動畫結束後的收尾工作
+        function finishRound() {
+            currentIndex += itemsPerDraw; // 正式推進進度
+            saveState(); // 存檔
+            isAnimating = false;
+            
+            // 更新歷史區顯示 (把剛剛中間的「舊」資料補進去，但中間保留剛剛動畫完的結果)
+            // 這裡我們只更新歷史區，不動中間區(因為中間區剛動畫完，還熱騰騰的)
+            const historyContainer = document.getElementById('history-container');
+            historyContainer.innerHTML = '';
+            const historyEndIndex = currentIndex - itemsPerDraw;
+            for (let i = 0; i < historyEndIndex; i++) {
+                const div = document.createElement('div');
+                div.className = 'history-item';
+                div.textContent = allItems[i];
+                historyContainer.appendChild(div);
+            }
+
+            updateStatus(); // 解鎖按鈕
+        }
+
+        // 輔助：產生隨機的假文字 (B1..S12) 讓動畫看起來像真的在挑
+        function getRandomPlaceholder() {
+            const prefix = Math.random() > 0.5 ? 'B' : 'S';
+            const num = Math.floor(Math.random() * 12) + 1;
+            return `${prefix}${num}`;
+        }
+
         function updateStatus() {
             const drawBtn = document.getElementById('drawBtn');
             const statusLabel = document.getElementById('status');
@@ -254,12 +339,16 @@
 
             const roundsLeft = totalRounds - (currentIndex / itemsPerDraw);
 
-            // 控制「清除重置」按鈕的顯示 (剛開始不顯示，有進度才顯示)
             if (currentIndex > 0 && roundsLeft > 0) {
                 resetBtn.style.display = 'block';
             } else {
                 resetBtn.style.display = 'none';
             }
+
+            // 如果正在動畫中，不要改按鈕文字 (保持 "抽籤中...")
+            if (isAnimating) return;
+
+            drawBtn.disabled = false;
 
             if (currentIndex === 0) {
                 drawBtn.textContent = "開始抽籤";
@@ -269,7 +358,6 @@
                 drawBtn.textContent = "抽籤結束 (點擊開始新局)";
                 drawBtn.style.backgroundColor = "#27ae60";
                 statusLabel.textContent = "已完成所有分組";
-                // 結束時也顯示重置按鈕，或者依賴主按鈕重置皆可
                 resetBtn.style.display = 'none'; 
             } else {
                 drawBtn.textContent = "抽取下一組";
@@ -278,7 +366,6 @@
             }
         }
 
-        // 7. 強制重置 (清除 Cookie/Storage)
         function hardReset() {
             localStorage.removeItem(STORAGE_KEY);
             location.reload();
